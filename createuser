@@ -1,0 +1,119 @@
+#!/bin/bash --posix
+
+# COMP 3532 A4 createuser
+# Winter 2021
+# @author Salim Manji
+
+DFLAG=0
+PFLAG=0
+USERDIR=''
+USERID=''
+USERSHELL=''
+
+if [ $EUID -ne 0 ]; then
+    echo "createuser: must be run as root" 1>&2
+    exit 1
+fi
+
+if [ $# -eq 0 ]; then
+    echo "createuser: usage: createuser [-p|--password|-d|--directory|-s|--shell] userid"
+    exit 2
+fi
+
+while [ $# -ne 0 ]; do
+    if [[ $1 =~ ^-+([^-psd].*) ]]; then
+		MATCH=${BASH_REMATCH[1]}
+		echo "createuser: "${MATCH:0:1}": invalid option" 1>&2
+		exit 3
+	fi
+    if [[ $1 =~ ^-p+ ]] || [[ $1 =~ ^--password ]]; then
+		PFLAG=1 
+    fi	
+    if [[ $1 =~ ^-p*d(.+)$ ]] || [[ $1 =~ ^--directory=(.*) ]]; then
+		USERDIR=${BASH_REMATCH[1]}
+		DFLAG=1	 
+    elif [[ $1 =~ ^-p*d$ ]]; then
+		if [ $# -gt 1 ] && [[ ! $2 =~ ^- ]]; then
+			USERDIR=$2
+		    shift
+		else
+			echo "createuser: no directory supplied" 1>&2
+			exit 4
+		fi
+		DFLAG=1
+	elif [[ $1 =~ ^--directory$ ]]; then
+		USERDIR=$2
+		DFLAG=1
+		shift
+		if [ -z $USERDIR ]; then
+			echo "createuser: no directory supplied" 1>&2
+			exit 4
+		fi
+    elif [[ $1 =~ ^-p*s(.+) ]] || [[ $1 =~ ^--shell=(.*) ]]; then
+		USERSHELL=${BASH_REMATCH[1]}
+	elif [[ $1 =~ ^--shell$ ]]; then
+		USERSHELL=$2
+		shift
+		if [ -z $USERSHELL ]; then
+			echo "createuser: no shell supplied" 1>&2
+			exit 5
+		fi	
+    elif [[ $1 =~ ^-p*s$ ]]; then
+		if [ $# -gt 1 ] && [[ ! $2 =~ ^- ]]; then
+			USERSHELL=$2
+			shift
+		else
+			echo "createuser: no shell supplied" 1>&2
+			exit 5
+		fi
+    elif [[ $1 =~ ^[^-].+ ]]; then
+		if [ -z $USERID ]; then
+			USERID=$1
+		else
+			echo "createuser: multiple userid's provided" 1>&2
+			exit 6
+		fi
+    fi
+    shift
+done
+
+if [ "$USERSHELL" = '' ];then
+	USERSHELL="/bin/bash"
+fi
+
+if [ $DFLAG -eq 0 ]; then
+    USERDIR='/home/'$USERID
+fi
+
+if [ -z $USERID ]; then
+    echo "createuser: no userid supplied" 1>&2
+    exit 7
+fi
+
+if ! [[ $USERDIR =~ ^(/[a-zA-Z0-9_]+)+/? ]]; then
+    echo "createuser: "$USERDIR" - not an absolute path" 1>&2
+    exit 8
+fi
+
+egrep "^$USERSHELL$" /etc/shells 1>/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "createuser: "$USERSHELL" - not found in /etc/shells" 1>&2
+    exit 9
+fi
+
+if ! [[ $USERID =~ ^[a-z_][a-zA-Z0-9_]*$ ]]; then
+    echo "createuser: "$USERID" - invalid userid" 1>&2
+    exit 10
+fi
+
+getent passwd $USERID 1>/dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo "createuser: user '"$USERID"' already exists"
+    exit 11
+else
+    useradd -s$USERSHELL -d$USERDIR -m $USERID
+
+    if [ $PFLAG -eq 1 ]; then
+		passwd $USERID
+    fi
+fi
